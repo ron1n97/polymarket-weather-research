@@ -5,8 +5,11 @@ __pycache__/
 .env
 *.egg-info/
 
-# large / local caches (curate later for public extract)
+# large / local caches — not part of the public extract
 data/
 outputs/
 non_legacy_v2.csv
 .claude/
+
+# keep curated public artifacts tracked:
+# results/ figures/ docs/ scripts/ strategy docs

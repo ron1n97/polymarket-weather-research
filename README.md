@@ -1,148 +1,90 @@
-# Weather Prediction Trading Workflow
+# Polymarket Weather Research
 
-This repo contains research, backtests, and operational scripts for trading Polymarket weather markets.
+[![Research Note PDF](https://img.shields.io/badge/Research%20Note-PDF-red?style=for-the-badge&logo=adobeacrobatreader&logoColor=white)](docs/pdf/research_note.pdf)
+[![Markdown](https://img.shields.io/badge/Research%20Note-Markdown-blue?style=for-the-badge)](docs/research_note.md)
 
-The current live mode is:
+Honest research notes and code from building a **selective edge** system on [Polymarket](https://polymarket.com) daily max-temperature markets — not a “always buy the forecast bin” bot.
 
-- `paper + tiny live` in parallel
-- live only on `tradable` cities
-- current live size: `$1` per trade
-- current default exit: hold to resolution
+This is a **curated public extract**, not a dump of the private lab.
 
+**Bottom line (selected backtest `non_legacy_v2_mid`):** **1,123** trades · **52.5%** hit-rate · **+0.026** avg PnL/share · **NO-heavy** book. Live = paper + **$1** tiny-live on **Seoul / Paris** only; at write-up time **0 settled** live trades — not live alpha.
 
-## Current Policy
+Start here: **[open the PDF](docs/pdf/research_note.pdf)** · or the [Markdown note](docs/research_note.md).
 
-Read these first:
+---
 
-- [live_policy_v1.md](/Users/ron1n97/projects/ml/weather-prediction/live_policy_v1.md)
-- [strategy_v1.md](/Users/ron1n97/projects/ml/weather-prediction/strategy_v1.md)
-- [city_whitelist_v1.md](/Users/ron1n97/projects/ml/weather-prediction/city_whitelist_v1.md)
+## Why this repo exists
 
-Current whitelist:
+Prediction-market / quant screens reward:
 
-- `tradable`: `Seoul`, `Paris`
-- `experimental`: `Singapore`, `Shanghai`
-- `avoid`: `Dallas`, `Tokyo`
+1. Venue microstructure thinking (buckets, deadline, ask/edge)
+2. Regime separation (day+4 vs same-day Asia)
+3. Documented filters and negative results
+4. Clear split between backtest, paper, and live
 
+---
 
-## Main Outputs
+## Current policy (short)
 
-Daily documents:
+| Tier | Cities |
+|---|---|
+| Tradable (tiny live) | Seoul, Paris |
+| Experimental | Singapore, Shanghai |
+| Avoid / deprioritize | Dallas, Tokyo |
 
-- [daily_signal_brief.html](/Users/ron1n97/projects/ml/weather-prediction/outputs/paper/daily_signal_brief.html)
-- [paper_trading_dashboard.html](/Users/ron1n97/projects/ml/weather-prediction/outputs/paper/paper_trading_dashboard.html)
-- [current_edge_table.html](/Users/ron1n97/projects/ml/weather-prediction/outputs/edges/current_edge_table.html)
+Details: [`live_policy_v1.md`](live_policy_v1.md) · [`strategy_v1.md`](strategy_v1.md) · [`city_whitelist_v1.md`](city_whitelist_v1.md)
 
-Live tracking:
+---
 
-- [live_trade_log.csv](/Users/ron1n97/projects/ml/weather-prediction/outputs/paper/live_trade_log.csv)
-- [live_pnl_summary.html](/Users/ron1n97/projects/ml/weather-prediction/outputs/paper/live_pnl_summary.html)
-- [paper_session_log.csv](/Users/ron1n97/projects/ml/weather-prediction/outputs/paper/paper_session_log.csv)
+## Repository layout
 
-Archives:
-
-- [outputs/paper/archive](/Users/ron1n97/projects/ml/weather-prediction/outputs/paper/archive)
-- [outputs/paper/latest](/Users/ron1n97/projects/ml/weather-prediction/outputs/paper/latest)
-
-
-## Daily Workflow
-
-### 1. Run Daily Paper Cycle
-
-This refreshes the whole stack, archives the day, updates `latest`, and prints a short summary.
-
-```bash
-./.venv/bin/python scripts/run_paper_cycle.py --market-date 2026-04-08 --bankroll 50
+```
+docs/
+  research_note.md          # main write-up
+  pdf/research_note.pdf     # PDF with figures
+results/                    # sanitized summary CSVs (for figures)
+figures/                    # regenerated plots
+scripts/                    # paper cycle, edge backtest, monitors
+strategy_v1.md              # full strategy thesis
+live_policy_v1.md           # live / paper rules
+city_whitelist_v1.md        # city tiers from backtest
+markets_research.md         # venue / timezone notes
 ```
 
-If you want to rebuild from existing fetched data only:
+**Not** included: raw `data/`, full `outputs/` archives, `.env`, wallet keys, live order plumbing secrets.
+
+---
+
+## Key findings (short)
+
+- Day+4 **exact-bin** forecast hit rates are too weak for naive YES; 3-bin windows look better but crowd already prices the center.
+- Shared **12:00 UTC** deadline creates real **Asia same-day** information advantage.
+- Selected edge backtest is profitable on paper metrics, driven by **NO**; YES stays sparse.
+- Whitelist prefers sample + stability (Seoul/Paris) over peak avg (Singapore).
+
+---
+
+## Quick start (figures)
 
 ```bash
-./.venv/bin/python scripts/run_paper_cycle.py --market-date 2026-04-08 --bankroll 50 --skip-fetch
+python -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+python scripts/make_figures.py
 ```
 
+## Daily paper cycle (local lab)
 
-### 2. Read The Brief
-
-Primary document:
-
-- [daily_signal_brief.html](/Users/ron1n97/projects/ml/weather-prediction/outputs/paper/daily_signal_brief.html)
-
-Interpretation:
-
-- `trade`: allowed for live / tiny live
-- `paper only`: observe, do not execute live
-- `no trade`: ignore
-
-
-### 3. Log New Live Trades
-
-If you manually place trades from the brief, they should be present in:
-
-- [live_trade_log.csv](/Users/ron1n97/projects/ml/weather-prediction/outputs/paper/live_trade_log.csv)
-
-To append new `trade` rows from the brief automatically:
+Needs network + local caches under `data/` / `outputs/` (gitignored):
 
 ```bash
-./.venv/bin/python scripts/append_live_trades_from_brief.py
+python scripts/run_paper_cycle.py --market-date YYYY-MM-DD --bankroll 50
 ```
 
-This script deduplicates by:
+Primary brief: `outputs/paper/daily_signal_brief.html` (local).
 
-- `market_date`
-- `city`
-- `bucket_label`
-- `side`
+---
 
+## Related public work
 
-### 4. Settle Open Trades
-
-After markets resolve:
-
-```bash
-./.venv/bin/python scripts/settle_live_trades.py
-./.venv/bin/python scripts/build_live_pnl_summary.py
-```
-
-Outputs:
-
-- [live_pnl_summary.csv](/Users/ron1n97/projects/ml/weather-prediction/outputs/paper/live_pnl_summary.csv)
-- [live_daily_pnl.csv](/Users/ron1n97/projects/ml/weather-prediction/outputs/paper/live_daily_pnl.csv)
-- [live_pnl_summary.html](/Users/ron1n97/projects/ml/weather-prediction/outputs/paper/live_pnl_summary.html)
-
-
-## Core Scripts
-
-Pipeline:
-
-- [scripts/run_daily_pipeline.py](/Users/ron1n97/projects/ml/weather-prediction/scripts/run_daily_pipeline.py)
-- [scripts/run_paper_cycle.py](/Users/ron1n97/projects/ml/weather-prediction/scripts/run_paper_cycle.py)
-
-Signal generation:
-
-- [scripts/fetch_polymarket_weather_markets.py](/Users/ron1n97/projects/ml/weather-prediction/scripts/fetch_polymarket_weather_markets.py)
-- [scripts/fetch_current_forecast_snapshot.py](/Users/ron1n97/projects/ml/weather-prediction/scripts/fetch_current_forecast_snapshot.py)
-- [scripts/build_current_market_monitor.py](/Users/ron1n97/projects/ml/weather-prediction/scripts/build_current_market_monitor.py)
-- [scripts/calc_market_edge.py](/Users/ron1n97/projects/ml/weather-prediction/scripts/calc_market_edge.py)
-- [scripts/filter_trade_candidates.py](/Users/ron1n97/projects/ml/weather-prediction/scripts/filter_trade_candidates.py)
-- [scripts/build_paper_trading_dashboard.py](/Users/ron1n97/projects/ml/weather-prediction/scripts/build_paper_trading_dashboard.py)
-- [scripts/build_daily_signal_brief.py](/Users/ron1n97/projects/ml/weather-prediction/scripts/build_daily_signal_brief.py)
-
-Live tracking:
-
-- [scripts/append_live_trades_from_brief.py](/Users/ron1n97/projects/ml/weather-prediction/scripts/append_live_trades_from_brief.py)
-- [scripts/settle_live_trades.py](/Users/ron1n97/projects/ml/weather-prediction/scripts/settle_live_trades.py)
-- [scripts/build_live_pnl_summary.py](/Users/ron1n97/projects/ml/weather-prediction/scripts/build_live_pnl_summary.py)
-
-Backtests and bankroll:
-
-- [scripts/backtest_edge_strategy.py](/Users/ron1n97/projects/ml/weather-prediction/scripts/backtest_edge_strategy.py)
-- [scripts/simulate_bankroll.py](/Users/ron1n97/projects/ml/weather-prediction/scripts/simulate_bankroll.py)
-
-
-## Important Notes
-
-- Current practical live size is `$1` because minimum Polymarket stake is binding.
-- At a `$50` bankroll, this is effectively `2%` per trade.
-- Current live strategy is `NO-heavy`.
-- Backtests and live logs are different layers; do not mix backtest PnL with live journal PnL.
+- [polymarket-btc-5m-research](https://github.com/ron1n97/polymarket-btc-5m-research) — BTC 5m direction vs Polymarket economics  
+- [f1-pitstop-prediction](https://github.com/ron1n97/f1-pitstop-prediction) — Kaggle PS S6E5 (top 18.8%)

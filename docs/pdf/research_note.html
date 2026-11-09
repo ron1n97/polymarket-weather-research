@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"/>
+<title>Polymarket Weather Research Note</title>
+<style>
+@page { margin: 16mm; }
+body { font-family: "Iowan Old Style", Palatino, Georgia, serif; font-size: 11pt; line-height: 1.42; color: #1a1a1a; max-width: 740px; margin: 0 auto; padding: 20px 14px 40px; }
+h1 { font-size: 1.55rem; line-height: 1.2; margin: 0 0 0.5em; }
+h2 { font-size: 1.2rem; margin-top: 1.4em; border-bottom: 1px solid #ddd; padding-bottom: 0.15em; }
+h3 { font-size: 1.02rem; margin-top: 1.1em; }
+img { max-width: 100%; height: auto; display: block; margin: 0.9em auto; }
+code, pre { font-family: ui-monospace, Menlo, monospace; font-size: 0.86em; }
+pre { background: #f6f6f6; padding: 10px; overflow-x: auto; border-radius: 4px; }
+table { border-collapse: collapse; width: 100%; margin: 0.9em 0; font-size: 0.9em; }
+th, td { border: 1px solid #ccc; padding: 5px 7px; text-align: left; vertical-align: top; }
+th { background: #f0f0f0; }
+a { color: #0b57d0; text-decoration: none; }
+</style></head><body>
+<h1
+id="research-note-polymarket-weather-markets-selective-edge-trading">Research
+Note: Polymarket Weather Markets — Selective Edge Trading</h1>
+<p><strong>Author:</strong> ron1n97<br />
+<strong>Status:</strong> portfolio research write-up (curated extract
+from a private lab)<br />
+<strong>Stack:</strong> Python, Open-Meteo / station history, Polymarket
+CLOB weather buckets, paper + tiny-live loop<br />
+<strong>Code:</strong> this repository</p>
+<hr />
+<h2 id="abstract">Abstract</h2>
+<p>I studied Polymarket daily <strong>max-temperature</strong> bucket
+markets as a <strong>mispricing</strong> problem, not a “predict the
+exact °C” problem. Fair probability is compared to market-implied
+probability; trades fire only when edge clears filters for sample size,
+liquidity, and regime.</p>
+<p><strong>Headline backtest (selected filter
+<code>non_legacy_v2_mid</code>):</strong> <strong>1,123</strong> trades
+· hit-rate <strong>52.5%</strong> · avg <strong>+0.026</strong>
+PnL/share · total <strong>+29.2</strong> PnL/share units (2025-12-06 →
+2026-03-22). The book is <strong>NO-heavy</strong>: <code>bet no</code>
+hit-rate <strong>82.6%</strong> / <strong>+0.039</strong>/share;
+<code>bet yes</code> hit-rate <strong>9.7%</strong> /
+<strong>+0.008</strong>/share.</p>
+<p><strong>Live status:</strong> paper + <strong>$1</strong> tiny-live
+on whitelist cities only. At note time the live journal had <strong>4
+open / 0 settled</strong> trades — <strong>not</strong> evidence of live
+alpha. Bankroll curves below are <strong>backtest simulations</strong>,
+same caveat as in the BTC research note.</p>
+<figure>
+<img src="../../figures/research_path.png" alt="Research path" />
+<figcaption aria-hidden="true">Research path</figcaption>
+</figure>
+<hr />
+<h2 id="market-setup">1. Market setup</h2>
+<ul>
+<li>Product: multi-outcome daily high-temperature buckets (exact °C /
+tails)<br />
+</li>
+<li>Shared trading deadline: <strong>12:00 UTC</strong> on resolution
+day<br />
+</li>
+<li>Settlement: Weather Underground airport-station daily max (integer
+°C)<br />
+</li>
+<li>Universe researched: up to ~39 cities; ~20–35 markets open on a
+typical day</li>
+</ul>
+<p>Structural fact: the deadline is global, but <strong>local
+information</strong> at 12:00 UTC is not. In UTC+8/+9 cities the local
+day is already evening — today’s max is often nearly known. In US West
+it is still night.</p>
+<figure>
+<img src="../../figures/deadline_info_asymmetry.png"
+alt="Deadline information asymmetry" />
+<figcaption aria-hidden="true">Deadline information
+asymmetry</figcaption>
+</figure>
+<p>That asymmetry is why <strong>same-day Asia</strong> sits at the top
+of the intended edge hierarchy — separate from day+4 forecast
+following.</p>
+<hr />
+<h2 id="thesis">2. Thesis</h2>
+<p>Do <strong>not</strong> mix these into one rule set:</p>
+<table>
+<colgroup>
+<col style="width: 50%" />
+<col style="width: 50%" />
+</colgroup>
+<thead>
+<tr>
+<th>Regime</th>
+<th>Posture</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Day+4</td>
+<td>Low confidence; sparse edges; mostly hunt overpriced center →
+selective <strong>NO</strong></td>
+</tr>
+<tr>
+<td>Day+1 / Day+2</td>
+<td>Better forecast quality; selective YES/NO</td>
+</tr>
+<tr>
+<td>Same-day Asia (pre-12:00 UTC)</td>
+<td>Strongest structural edge; use observed path, not just forecast</td>
+</tr>
+</tbody>
+</table>
+<p>Decision unit = Polymarket’s <strong>actual buckets</strong> (exact
+bin, 3-bin cluster, tail), with:</p>
+<p>[ = - ]</p>
+<p>Trade only when edge survives model-risk / spread / liquidity
+penalties.</p>
+<hr />
+<h2 id="why-naive-forecast-following-fails">3. Why naive
+forecast-following fails</h2>
+<p>Day+4 archived forecasts: <strong>exact rounded bin</strong> hit
+rates are low (often ~13–31% by city). A <strong>±1°C three-bin</strong>
+window is much higher (~40–75%), but that still does
+<strong>not</strong> justify blindly buying the center cluster at market
+prices — crowd already piles into the obvious bins.</p>
+<figure>
+<img src="../../figures/day4_exact_vs_three_bin.png"
+alt="Day+4 exact vs three-bin" />
+<figcaption aria-hidden="true">Day+4 exact vs three-bin</figcaption>
+</figure>
+<p>Practical implication: day+4 is <strong>not</strong> a broad long
+book; it may support selective <strong>NO</strong> / tail ideas when the
+center is overpriced.</p>
+<hr />
+<h2 id="selected-edge-backtest">4. Selected edge backtest</h2>
+<p>Filter pack labeled <strong><code>non_legacy_v2_mid</code></strong>
+(lab naming): mid thresholds on edge / sample, non-legacy market
+set.</p>
+<table>
+<thead>
+<tr>
+<th>Metric</th>
+<th>Value</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Trades</td>
+<td><strong>1,123</strong></td>
+</tr>
+<tr>
+<td>Hit-rate (PnL &gt; 0)</td>
+<td><strong>52.5%</strong></td>
+</tr>
+<tr>
+<td>Avg PnL / share</td>
+<td><strong>+0.026</strong></td>
+</tr>
+<tr>
+<td>Total PnL / share</td>
+<td><strong>+29.2</strong></td>
+</tr>
+<tr>
+<td>Date span</td>
+<td>2025-12-06 → 2026-03-22</td>
+</tr>
+<tr>
+<td>Side mix</td>
+<td>660 NO / 463 YES</td>
+</tr>
+</tbody>
+</table>
+<figure>
+<img src="../../figures/cum_pnl.png" alt="Cumulative backtest PnL" />
+<figcaption aria-hidden="true">Cumulative backtest PnL</figcaption>
+</figure>
+<figure>
+<img src="../../figures/side_split.png" alt="Side split" />
+<figcaption aria-hidden="true">Side split</figcaption>
+</figure>
+<p><strong>City view</strong> (same backtest) drives the live
+whitelist:</p>
+<table>
+<thead>
+<tr>
+<th>City</th>
+<th>Tier</th>
+<th>Trades</th>
+<th>Avg PnL/share</th>
+<th>Hit-rate</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Singapore</td>
+<td>experimental</td>
+<td>68</td>
+<td>+0.082</td>
+<td>67.6%</td>
+</tr>
+<tr>
+<td>Paris</td>
+<td><strong>tradable</strong></td>
+<td>256</td>
+<td>+0.034</td>
+<td>52.7%</td>
+</tr>
+<tr>
+<td>Seoul</td>
+<td><strong>tradable</strong></td>
+<td>355</td>
+<td>+0.026</td>
+<td>49.9%</td>
+</tr>
+<tr>
+<td>Dallas</td>
+<td>avoid</td>
+<td>276</td>
+<td>+0.016</td>
+<td>47.5%</td>
+</tr>
+<tr>
+<td>Shanghai</td>
+<td>experimental</td>
+<td>68</td>
+<td>+0.016</td>
+<td>57.4%</td>
+</tr>
+<tr>
+<td>Tokyo</td>
+<td>avoid</td>
+<td>100</td>
+<td>+0.004</td>
+<td>62.0%</td>
+</tr>
+</tbody>
+</table>
+<p>Seoul/Paris earn <strong>tradable</strong> on sample + stability, not
+peak raw avg. Singapore looks hot but thin → experimental. Dallas/Tokyo
+deprioritized.</p>
+<figure>
+<img src="../../figures/city_avg_pnl.png" alt="City avg PnL" />
+<figcaption aria-hidden="true">City avg PnL</figcaption>
+</figure>
+<hr />
+<h2 id="live-policy-honest">5. Live policy (honest)</h2>
+<p>From <a
+href="../live_policy_v1.md"><code>live_policy_v1.md</code></a> / <a
+href="../city_whitelist_v1.md"><code>city_whitelist_v1.md</code></a>:</p>
+<ul>
+<li>Mode: <strong>paper + tiny live</strong> in parallel<br />
+</li>
+<li>Live cities: <strong>Seoul, Paris</strong> only<br />
+</li>
+<li>Size: <strong>$1</strong>/trade (Polymarket minimum binds at ~$50
+bankroll ≈ 2%/trade)<br />
+</li>
+<li>Default exit: hold to resolution<br />
+</li>
+<li>Expand cities before size; need ~20–30 live trades before arguing
+live edge</li>
+</ul>
+<p>At write-up time: <strong>4 open, 0 settled, $0 realized live
+PnL</strong>. Treat live as process validation, not performance.</p>
+<hr />
+<h2 id="bankroll-simulations-backtest-only">6. Bankroll simulations
+(backtest only)</h2>
+<p>Fractional Kelly-style sweeps on the same 1,123-trade path (start
+$50) show the usual return / drawdown frontier. Useful for sizing
+intuition; <strong>not</strong> a claim about live compounding.</p>
+<figure>
+<img src="../../figures/bankroll_frontier.png" alt="Bankroll frontier" />
+<figcaption aria-hidden="true">Bankroll frontier</figcaption>
+</figure>
+<p>Example: fraction 0.2% → ~+86% sim return / ~16% max DD; fraction 2%
+→ large sim return with ~84% max DD. Live stays at $1.</p>
+<hr />
+<h2 id="what-this-repo-is-is-not">7. What this repo is / is not</h2>
+<p><strong>Is:</strong> curated research note, sanitized result tables,
+figures, strategy/policy docs, and the scripts that build the daily
+paper cycle / edge backtests.</p>
+<p><strong>Is not:</strong> a dump of raw <code>data/</code>, full
+<code>outputs/</code> archives, API keys, wallet state, or a claim of
+production alpha.</p>
+<p>Private lab remains local; this is the public extract.</p>
+<hr />
+<h2 id="takeaways">8. Takeaways</h2>
+<ol type="1">
+<li><strong>Edge hierarchy ≠ forecast accuracy ranking.</strong>
+Same-day Asia wins on information timing; day+4 needs selective NO, not
+center-bin YES spam.<br />
+</li>
+<li><strong>NO carries measured PnL</strong> in the selected backtest;
+YES is low hit-rate and must stay sparse.<br />
+</li>
+<li><strong>Whitelist is an ops decision</strong> (sample + stability),
+not “highest backtest city wins.”<br />
+</li>
+<li><strong>Separate layers:</strong> forecast eval ≠ edge backtest ≠
+paper journal ≠ tiny live. Mixing them invents fake confidence.</li>
+</ol>
+<hr />
+<h2 id="reproduce-figures">Reproduce figures</h2>
+<div class="sourceCode" id="cb1"><pre
+class="sourceCode bash"><code class="sourceCode bash"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="ex">python</span> <span class="at">-m</span> venv .venv <span class="kw">&amp;&amp;</span> <span class="bu">source</span> .venv/bin/activate</span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="ex">pip</span> install <span class="at">-r</span> requirements.txt</span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="ex">python</span> scripts/make_figures.py</span></code></pre></div>
+<p>Full daily paper cycle needs local market/forecast fetches (see
+README). Result CSVs under <code>results/</code> are enough to
+regenerate the note figures.</p>
+
+</body></html>
