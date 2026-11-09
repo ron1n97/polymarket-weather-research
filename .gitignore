@@ -1,0 +1,12 @@
+.venv/
+__pycache__/
+*.py[cod]
+.DS_Store
+.env
+*.egg-info/
+
+# large / local caches (curate later for public extract)
+data/
+outputs/
+non_legacy_v2.csv
+.claude/
